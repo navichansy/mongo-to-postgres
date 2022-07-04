@@ -7,7 +7,7 @@
    * @return {Array} Ids map
    */
 export default async ({ knex, collections, tableName, rows }) => {
-  const { foreignKeys, fieldsRename, fieldsRedefine, links } =
+  const { foreignKeys, fieldsRename, fieldsRedefine, links, jsonFileName } =
     collections.find(c => c.tableName === tableName);
 
   const idsMap = []; // array for identifiers maps
@@ -45,16 +45,26 @@ export default async ({ knex, collections, tableName, rows }) => {
     }
 
     // save and then delete Mongo _id
+    // if (currentRow) console.log(currentRow);
     const oldId = currentRow._id.toString();
     delete currentRow._id;
 
     // remove arrays from row object
+
     const rowCopy = JSON.parse(JSON.stringify(currentRow));
+    console.log('rowCopy before', rowCopy);
     for (const fieldName of Object.keys(rowCopy)) {
       if (Array.isArray(rowCopy[fieldName])) {
-        delete rowCopy[fieldName];
+        const isJsonField = jsonFileName && jsonFileName.includes(fieldName);
+        console.log(isJsonField);
+        if (!isJsonField) {
+          delete rowCopy[fieldName];
+        } else {
+          rowCopy[fieldName] = JSON.stringify(rowCopy[fieldName]);
+        }
       }
     }
+    console.log('rowCopy', rowCopy);
     // insert current row
     const newId = await knex(tableName)
       .returning('id')
@@ -74,7 +84,7 @@ export default async ({ knex, collections, tableName, rows }) => {
           if (relatedField.constructor.name === 'ObjectID') {
             foreignKey = relatedField.toString();
           } else {
-          // or if it contains additional fields
+            // or if it contains additional fields
             const func = linksTableAttrs[3];
             const res = func(linkRow, relatedField);
             foreignKey = res.foreignKey;
