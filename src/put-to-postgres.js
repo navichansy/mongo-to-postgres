@@ -7,7 +7,7 @@
    * @return {Array} Ids map
    */
 export default async ({ knex, collections, tableName, rows }) => {
-  const { foreignKeys, fieldsRename, fieldsRedefine, links, jsonFileName } =
+  const { foreignKeys, fieldsRename, fieldsRedefine, links, jsonFileName, ignoreField } =
     collections.find(c => c.tableName === tableName);
 
   const idsMap = []; // array for identifiers maps
@@ -52,16 +52,66 @@ export default async ({ knex, collections, tableName, rows }) => {
     // remove arrays from row object
 
     const rowCopy = JSON.parse(JSON.stringify(currentRow));
+    // console.log('rowCopy before', rowCopy);
     for (const fieldName of Object.keys(rowCopy)) {
+      const toIgnore = ignoreField && ignoreField.includes(fieldName)
       if (Array.isArray(rowCopy[fieldName])) {
-        const isJsonField = jsonFileName && jsonFileName.includes(fieldName);
+        const isJsonField = jsonFileName && jsonFileName.find(j => j.name === fieldName);
+        // if (isJsonField !== null) console.log( isJsonField);
         if (!isJsonField) {
           delete rowCopy[fieldName];
         } else {
-          rowCopy[fieldName] = JSON.stringify(rowCopy[fieldName]);
+          let newList
+          if (isJsonField && isJsonField.substitueIdTo) { // only applied to json with array of ids
+            const foreignCollection = collections.find(c => c.collectionName === isJsonField.substitueIdTo);
+            if (foreignCollection && foreignCollection.idsMap !== undefined) {
+              const maps = foreignCollection.idsMap;
+              const newArray = rowCopy[fieldName].map(x => maps.find(xx => xx.oldId === x).newId.toString())
+              // console.log(newArray)
+              newList = JSON.stringify(newArray);
+            }
+          } else if (isJsonField && isJsonField.foreignKeys) {
+            let newObjArray = [];
+            //  console.log('fieldName', fieldName);
+            //  console.log('isJsonField', isJsonField);
+            for (const record of rowCopy[fieldName]) {
+              let arrayObject = {};
+              //  console.log('record', record);
+              // console.log('Object.keys(record)', Object.keys(record));
+              for (const keyName of Object.keys(record)) {
+                // console.log('keyName', keyName);
+                const hasForiegnKey = Object.keys(isJsonField.foreignKeys).find(key => key === keyName);
+                if (hasForiegnKey) {
+                  //  console.log('hasForiegnKey', hasForiegnKey, isJsonField.foreignKeys[hasForiegnKey]);
+                  const foreignCollection = collections.find(c => c.collectionName === isJsonField.foreignKeys[hasForiegnKey]);
+                  const maps = foreignCollection ? foreignCollection.idsMap : null;
+                  //   console.log('maps', maps.length)
+                  const matched = maps ? maps.find(xx => xx.oldId === record[keyName]) : null
+                  arrayObject[keyName] = matched
+                    ? matched.newId.toString()
+                    : record[keyName];
+                  //  console.log('arrayObject[keyName]', keyName, arrayObject[keyName])
+                } else {
+                  //   console.log('keyName', keyName);
+                  arrayObject[keyName] = record[keyName];
+                }
+              }
+              newObjArray.push(arrayObject);
+            }
+            newList = JSON.stringify(newObjArray)
+          } else {
+            newList = JSON.stringify(rowCopy[fieldName]);
+          }
+          rowCopy[fieldName] = newList;
         }
+      } else if (fieldName === 'id') {  //remove 'id' field in original mongoDB
+        delete rowCopy[fieldName];
+      }
+      if (toIgnore) {  //remove ignore field in original mongoDB
+        delete rowCopy[fieldName];
       }
     }
+    //console.log('rowCopy', rowCopy)
     // insert current row
     const newId = await knex(tableName)
       .returning('id')
