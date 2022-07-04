@@ -52,11 +52,9 @@ export default async ({ knex, collections, tableName, rows }) => {
     // remove arrays from row object
 
     const rowCopy = JSON.parse(JSON.stringify(currentRow));
-    console.log('rowCopy before', rowCopy);
     for (const fieldName of Object.keys(rowCopy)) {
       if (Array.isArray(rowCopy[fieldName])) {
         const isJsonField = jsonFileName && jsonFileName.includes(fieldName);
-        console.log(isJsonField);
         if (!isJsonField) {
           delete rowCopy[fieldName];
         } else {
@@ -64,7 +62,6 @@ export default async ({ knex, collections, tableName, rows }) => {
         }
       }
     }
-    console.log('rowCopy', rowCopy);
     // insert current row
     const newId = await knex(tableName)
       .returning('id')
